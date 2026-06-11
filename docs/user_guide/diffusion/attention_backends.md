@@ -20,6 +20,7 @@ The full set of backends and their platform defaults is in the **Backend Options
 | `TORCH_SDPA` | PyTorch `scaled_dot_product_attention` with the default backend dispatcher. Most conservative; always available. |
 | `SAGE_ATTN` | SageAttention 2.2 — INT8-quantized attention with FP16 accumulation. Lossy but typically visually indistinguishable on diffusion outputs. Requires `sageattention`. |
 | `SAGE_ATTN_3` | Requires `sageattn3` from `SageAttention/sageattention3_blackwell`. CUDA only, intended for Blackwell GPUs, with GQA/MQA requests falling back to PyTorch SDPA. |
+| `SPARSE_ATTENTION` | In-tree dispatcher to **external** sparse-attention kernels registered via the `vllm_omni.sparse_attn` entry-point group (no kernels are vendored). Opt-in per role; maskless self-attention only. See [Sparse attention (plugin)](#sparse-attention-plugin). |
 
 
 ## Configuration
@@ -92,6 +93,78 @@ config = OmniDiffusionConfig(
 ```
 
 A plain dict is also accepted and normalized to `AttentionConfig`.
+
+## Sparse attention (plugin)
+
+`SPARSE_ATTENTION` is an in-tree *dispatcher*: vLLM-Omni owns only the slot, while
+the actual sparse kernels ship as **external, pip-installable packages**. A kernel
+package registers a function via the `vllm_omni.sparse_attn` entry-point group
+(`dummy_sparse` below is a placeholder name — use your kernel's):
+
+```toml
+# pyproject.toml of the external kernel package
+[project.entry-points."vllm_omni.sparse_attn"]
+dummy_sparse = "dummy_sparse_attn:attn_fn"
+```
+
+Function contract (device-agnostic, maskless self-attention):
+
+```python
+def attn_fn(query, key, value, params: dict, is_causal: bool, softmax_scale: float) -> torch.Tensor: ...
+```
+
+`query`/`key`/`value` use the **BSND** layout `[batch, seq_len, num_heads, head_dim]`,
+and the function returns the same layout. `is_causal` and `softmax_scale` are the
+standard attention scalars set by the framework (`softmax_scale` defaults to
+`head_dim ** -0.5`); kernel-specific knobs and per-forward state arrive in `params`.
+
+### Selecting a sparse kernel
+
+Opt-in per role. The shorthand routes the plugin name through the dispatcher:
+
+```bash
+# Shorthand: backend = <plugin name>
+vllm-omni serve Wan-AI/Wan2.2-T2V-A14B-Diffusers \
+    --diffusion-attention-config.per_role.self.backend dummy_sparse \
+    --diffusion-attention-config.per_role.self.extra.topk 0.3
+
+# Explicit dispatcher form (equivalent)
+vllm-omni serve Wan-AI/Wan2.2-T2V-A14B-Diffusers \
+    --diffusion-attention-config '{"per_role":{"self":{"backend":"SPARSE_ATTENTION","extra":{"backend":"dummy_sparse","params":{"topk":0.3}}}}}'
+```
+
+Target `self` only — cross-attention keeps its dense default (sparsifying text
+cross-attention degrades quality).
+
+### The `params` dict
+
+The dispatcher hands the kernel one flat `params` dict, merged from three tiers
+(later wins, `None` dropped, so use `params.get(key, default)`):
+
+1. **static** — the kernel's configured params (`extra.params`, or flat `extra` keys).
+2. **per-forward** — canonical framework fields (`PerForwardState`): `denoise_step_idx`
+   and `total_denoise_steps`, each a per-sample `[num_samples]` tensor. Use them for
+   step-aware schedules, e.g. `progress = denoise_step_idx / total_denoise_steps`.
+3. **dynamic** — the opaque `AttentionMetadata.extra`.
+
+vLLM-Omni interprets no kernel-level parameter; the plugin reads what it needs.
+
+### Writing a plugin
+
+```python
+# dummy_sparse_attn/__init__.py  (external package)
+def attn_fn(query, key, value, params, is_causal, softmax_scale):
+    # query/key/value are BSND: [batch, seq_len, num_heads, head_dim]
+    topk = params.get("topk", 1.0)
+    step = params.get("denoise_step_idx")        # per-sample tensor, or None
+    total = params.get("total_denoise_steps")    # per-sample tensor, or None
+    ...                                          # call the sparse kernel (returns BSND)
+    return out
+```
+
+Install it into the same environment (`pip install dummy-sparse-attn`); the
+dispatcher resolves it eagerly at model init, so a missing or broken plugin fails
+loudly there rather than silently falling back to dense.
 
 ## Platform Defaults
 

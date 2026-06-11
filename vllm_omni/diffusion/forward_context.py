@@ -27,6 +27,10 @@ class ForwardContext:
     attn_metadata: dict[str, AttentionMetadata] | list[dict[str, AttentionMetadata]] | None = None
     split_text_embed_in_sp: bool = False
     denoise_step_idx: int | None = None
+    # Total number of denoise steps for the current generation. Set once by the
+    # pipeline before its timestep loop so step-aware attention backends can
+    # compute a progress fraction (denoise_step_idx / total_denoise_steps).
+    total_denoise_steps: int | None = None
     # Per-request reference latent for img2img DiT models (e.g. Ming)
     ref_latent: torch.Tensor | None = None
     # whether to split the text embed in sequence parallel, if True, the text embed will be split in sequence parallel
@@ -111,6 +115,7 @@ def create_forward_context(
     attn_metadata: dict[str, AttentionMetadata] | list[dict[str, AttentionMetadata]] | None = None,
     split_text_embed_in_sp: bool = False,
     denoise_step_idx: int | None = None,
+    total_denoise_steps: int | None = None,
 ):
     return ForwardContext(
         vllm_config=vllm_config,
@@ -118,6 +123,7 @@ def create_forward_context(
         attn_metadata=attn_metadata,
         split_text_embed_in_sp=split_text_embed_in_sp,
         denoise_step_idx=denoise_step_idx,
+        total_denoise_steps=total_denoise_steps,
     )
 
 
@@ -143,6 +149,7 @@ def set_forward_context(
     attn_metadata: dict[str, AttentionMetadata] | list[dict[str, AttentionMetadata]] | None = None,
     split_text_embed_in_sp: bool = False,
     denoise_step_idx: int | None = None,
+    total_denoise_steps: int | None = None,
 ):
     """A context manager that stores the current forward context,
     can be attention metadata, split_text_embed_in_sp, etc.
@@ -154,6 +161,7 @@ def set_forward_context(
         attn_metadata=attn_metadata,
         split_text_embed_in_sp=split_text_embed_in_sp,
         denoise_step_idx=denoise_step_idx,
+        total_denoise_steps=total_denoise_steps,
     )
     # vLLM CustomOp dispatch (e.g. QKVParallelLinear) requires a global
     # vLLM config set via set_current_vllm_config().
@@ -177,6 +185,17 @@ def set_forward_context_denoise_step_idx(step_idx: int | None) -> None:
     """Set the current diffusion denoise step on the active ForwardContext."""
     if _forward_context is not None:
         _forward_context.denoise_step_idx = step_idx
+
+
+def set_forward_context_total_denoise_steps(total_steps: int | None) -> None:
+    """Set the total number of denoise steps on the active ForwardContext.
+
+    Pipelines should call this once before their timestep loop. Step-aware
+    attention backends read it (alongside ``denoise_step_idx``) to compute a
+    progress fraction without per-block call-counting heuristics.
+    """
+    if _forward_context is not None:
+        _forward_context.total_denoise_steps = total_steps
 
 
 def set_forward_context_ref_latent(ref_latent: torch.Tensor | None) -> None:
