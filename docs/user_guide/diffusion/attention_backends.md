@@ -142,9 +142,12 @@ The dispatcher hands the kernel one flat `params` dict, merged from three tiers
 (later wins, `None` dropped, so use `params.get(key, default)`):
 
 1. **static** — the kernel's configured params (`extra.params`, or flat `extra` keys).
-2. **per-forward** — canonical framework fields (`PerForwardState`): `denoise_step_idx`
-   and `total_denoise_steps`, each a per-sample `[num_samples]` tensor. Use them for
-   step-aware schedules, e.g. `progress = denoise_step_idx / total_denoise_steps`.
+2. **per-forward** — canonical framework fields (`PerForwardState`), each a per-sample
+   `[num_samples]` tensor: `denoise_step_idx` / `total_denoise_steps` (e.g.
+   `progress = denoise_step_idx / total_denoise_steps`), plus video geometry
+   `total_latent_frames` / `patches_per_frame` when the model publishes its patch
+   grid (`seq_len == total_latent_frames * patches_per_frame`) — used by
+   structure-aware kernels to map the flat sequence to (frame, patch) coordinates.
 3. **dynamic** — the opaque `AttentionMetadata.extra`.
 
 vLLM-Omni interprets no kernel-level parameter; the plugin reads what it needs.

@@ -31,6 +31,13 @@ class ForwardContext:
     # pipeline before its timestep loop so step-aware attention backends can
     # compute a progress fraction (denoise_step_idx / total_denoise_steps).
     total_denoise_steps: int | None = None
+    # Per-forward video geometry, written by the model (the DiT transformer, from
+    # its patch grid) before attention runs, so structure-aware sparse kernels can
+    # map the flat token sequence back to (frame, patch) coordinates.
+    # total_latent_frames = post-patch temporal length; patches_per_frame = spatial
+    # patches per frame (seq_len == total_latent_frames * patches_per_frame).
+    total_latent_frames: int | None = None
+    patches_per_frame: int | None = None
     # Per-request reference latent for img2img DiT models (e.g. Ming)
     ref_latent: torch.Tensor | None = None
     # whether to split the text embed in sequence parallel, if True, the text embed will be split in sequence parallel
@@ -196,6 +203,25 @@ def set_forward_context_total_denoise_steps(total_steps: int | None) -> None:
     """
     if _forward_context is not None:
         _forward_context.total_denoise_steps = total_steps
+
+
+def set_forward_context_geometry(
+    *,
+    total_latent_frames: int | None = None,
+    patches_per_frame: int | None = None,
+) -> None:
+    """Set per-forward video geometry on the active ForwardContext.
+
+    Models call this once per forward (from their patch-grid computation, before
+    attention runs) so structure-aware sparse attention backends can recover the
+    (frame, patch) layout from the flat token sequence. See the geometry fields on
+    ``PerForwardState``. Each argument is only written when not ``None``.
+    """
+    if _forward_context is not None:
+        if total_latent_frames is not None:
+            _forward_context.total_latent_frames = total_latent_frames
+        if patches_per_frame is not None:
+            _forward_context.patches_per_frame = patches_per_frame
 
 
 def set_forward_context_ref_latent(ref_latent: torch.Tensor | None) -> None:

@@ -246,7 +246,9 @@ class Attention(nn.Module):
         ctx = get_forward_context()
         step_idx = ctx.denoise_step_idx
         total = ctx.total_denoise_steps
-        if step_idx is None and total is None:
+        frames = ctx.total_latent_frames
+        patches = ctx.patches_per_frame
+        if step_idx is None and total is None and frames is None and patches is None:
             return attn_metadata
 
         # Per-sample tensors on the sample axis. Layout is BSND, so query.shape[0]
@@ -261,6 +263,8 @@ class Attention(nn.Module):
         state = PerForwardState(
             denoise_step_idx=_per_sample(step_idx),
             total_denoise_steps=_per_sample(total),
+            total_latent_frames=_per_sample(frames),
+            patches_per_frame=_per_sample(patches),
         )
         if attn_metadata is None:
             return AttentionMetadata(per_forward=state)

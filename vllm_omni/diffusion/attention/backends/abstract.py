@@ -60,9 +60,10 @@ class PerForwardState:
     function-plugin path can flatten it into a plain ``params`` dict.
 
     Fields live on the SAMPLE axis: one entry per sample, shape ``[num_samples]``
-    (homogeneous batch -> all equal; heterogeneous batch -> mixed). Sequence
+    (homogeneous batch -> all equal; heterogeneous batch -> mixed). Raw sequence
     length / packing is NOT here — that is the token axis, carried by q/k/v and
-    cu_seqlens; model-supplied geometry stays in :attr:`AttentionMetadata.extra`.
+    cu_seqlens. Video *grid* geometry (frame / patch counts) IS provided, as the
+    geometry fields below, so a kernel can map the flat sequence to coordinates.
 
     All fields are optional; backends MUST ignore fields they don't use. Adding
     fields later is non-breaking.
@@ -73,6 +74,11 @@ class PerForwardState:
     # and (future) heterogeneous/continuous batching without a contract change.
     denoise_step_idx: torch.Tensor | None = None
     total_denoise_steps: torch.Tensor | None = None
+    # Video geometry (post-patch), written by the model from its patch grid so
+    # structure-aware kernels can split the flat sequence into (frame, patch):
+    # seq_len == total_latent_frames * patches_per_frame.
+    total_latent_frames: torch.Tensor | None = None
+    patches_per_frame: torch.Tensor | None = None
 
     def to_dict(self, *, exclude_none: bool = False) -> dict[str, Any]:
         """Shallow dict of the fields (no deep-copy of tensors).

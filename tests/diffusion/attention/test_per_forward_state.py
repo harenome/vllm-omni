@@ -4,9 +4,9 @@
 """Tests for per-forward attention state.
 
 Covers:
-- ForwardContext.total_denoise_steps field + setter + plumbing
+- ForwardContext.total_denoise_steps + geometry fields + setters + plumbing
 - PerForwardState dataclass + AttentionMetadata.per_forward field
-- Attention._with_per_forward_state bridge
+- Attention._with_per_forward_state bridge (step state + geometry)
 """
 
 from dataclasses import FrozenInstanceError, replace
@@ -25,6 +25,7 @@ from vllm_omni.diffusion.forward_context import (
     get_forward_context,
     override_forward_context,
     set_forward_context_denoise_step_idx,
+    set_forward_context_geometry,
     set_forward_context_total_denoise_steps,
 )
 
@@ -57,6 +58,14 @@ class TestForwardContextTotalDenoiseSteps:
         # ForwardContext is active (must not raise).
         with override_forward_context(None):
             set_forward_context_total_denoise_steps(40)
+            set_forward_context_geometry(total_latent_frames=21, patches_per_frame=1560)
+
+    def test_geometry_setter_updates_active_context(self):
+        with override_forward_context(ForwardContext()):
+            set_forward_context_geometry(total_latent_frames=21, patches_per_frame=1560)
+            ctx = get_forward_context()
+            assert ctx.total_latent_frames == 21
+            assert ctx.patches_per_frame == 1560
 
 
 class TestPerForwardState:
@@ -75,7 +84,7 @@ class TestPerForwardState:
     def test_to_dict_includes_none_by_default(self):
         st = PerForwardState(denoise_step_idx=torch.tensor([5, 5]))
         d = st.to_dict()
-        assert set(d) == {"denoise_step_idx", "total_denoise_steps"}
+        assert set(d) == {"denoise_step_idx", "total_denoise_steps", "total_latent_frames", "patches_per_frame"}
         assert d["total_denoise_steps"] is None
 
     def test_to_dict_exclude_none_drops_unset(self):
@@ -152,3 +161,14 @@ class TestPerForwardBridge:
             out = Attention._with_per_forward_state(AttentionMetadata(), self.Q(2))
         assert out.per_forward.denoise_step_idx.tolist() == [3, 3]
         assert out.per_forward.total_denoise_steps is None
+
+    def test_fills_geometry_per_sample(self):
+        q = self.Q(2)
+        # Geometry alone (no step state) must still populate per_forward.
+        with override_forward_context(ForwardContext(total_latent_frames=21, patches_per_frame=1560)):
+            out = Attention._with_per_forward_state(AttentionMetadata(), q)
+        pf = out.per_forward
+        assert pf is not None
+        assert pf.total_latent_frames.tolist() == [21, 21]
+        assert pf.patches_per_frame.tolist() == [1560, 1560]
+        assert pf.denoise_step_idx is None  # step fields stay None
