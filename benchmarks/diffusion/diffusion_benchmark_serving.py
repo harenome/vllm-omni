@@ -1198,7 +1198,13 @@ async def benchmark(args):
     # Run benchmark
     pbar = tqdm(total=len(requests_list), disable=args.disable_tqdm)
 
-    async with aiohttp.ClientSession() as session:
+    # When --client-timeout is unset, fall back to aiohttp's built-in default
+    # (total=300s). Long denoise sweeps at high concurrency can exceed that, so a
+    # benchmark run that wants to measure throughput rather than enforce a deadline
+    # should raise it explicitly.
+    session_timeout = None if args.client_timeout is None else aiohttp.ClientTimeout(total=args.client_timeout)
+    session_kwargs = {} if session_timeout is None else {"timeout": session_timeout}
+    async with aiohttp.ClientSession(**session_kwargs) as session:
         warmup_pairs = await _run_warmups(
             requests_list=requests_list,
             args=args,
@@ -1357,6 +1363,14 @@ if __name__ == "__main__":
         default=float("inf"),
         help="Number of requests per second. If this is inf, then all the requests are sent at time 0. "
         "Otherwise, we use Poisson process to synthesize the request arrival times. Default is inf.",
+    )
+    parser.add_argument(
+        "--client-timeout",
+        type=float,
+        default=None,
+        help="Per-request total timeout in seconds for the HTTP client. If unset, aiohttp's "
+        "default (total=300s) applies, which can truncate long high-concurrency sweeps. Set a "
+        "larger value (e.g. 900) to measure throughput without enforcing a per-request deadline.",
     )
     parser.add_argument(
         "--warmup-requests",
