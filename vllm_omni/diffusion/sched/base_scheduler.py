@@ -150,6 +150,18 @@ class _BaseScheduler(SchedulerInterface):
             kv_prefetch_jobs=kv_prefetch_jobs,
         )
 
+        # Effective per-step co-scheduling width: num_running_reqs is the number of
+        # requests stepped together this tick. For step-execution (grouped) diffusion
+        # this is the grouped denoise batch (group) size, up to any same-shape split
+        # applied downstream by the model pipeline. DEBUG-only; no effect on normal runs.
+        logger.debug(
+            "%s schedule step %d: running=%d (co-scheduled this step), waiting=%d",
+            self.__class__.__name__,
+            scheduler_output.step_id,
+            scheduler_output.num_running_reqs,
+            scheduler_output.num_waiting_reqs,
+        )
+
         # update after schedule
         self._step_id += 1
         self._finished_req_ids.clear()
