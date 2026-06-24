@@ -980,6 +980,9 @@ def calculate_metrics(
         "throughput_qps": num_success / total_duration if total_duration > 0 else 0,
         "latency_mean": np.mean(latencies) if latencies else 0,
         "latency_median": np.median(latencies) if latencies else 0,
+        "latency_std": float(np.std(latencies)) if latencies else 0,
+        "latency_min": float(np.min(latencies)) if latencies else 0,
+        "latency_max": float(np.max(latencies)) if latencies else 0,
         "latency_p99": np.percentile(latencies, 99) if latencies else 0,
         "latency_p95": np.percentile(latencies, 95) if latencies else 0,
         "latency_p50": np.percentile(latencies, 50) if latencies else 0,
@@ -1268,6 +1271,9 @@ async def benchmark(args):
     print("{:<40} {:<15.2f}".format("Request throughput (req/s):", metrics["throughput_qps"]))
     print("{:<40} {:<15.4f}".format("Latency Mean (s):", metrics["latency_mean"]))
     print("{:<40} {:<15.4f}".format("Latency Median (s):", metrics["latency_median"]))
+    print("{:<40} {:<15.4f}".format("Latency Std (s):", metrics["latency_std"]))
+    print("{:<40} {:<15.4f}".format("Latency Min (s):", metrics["latency_min"]))
+    print("{:<40} {:<15.4f}".format("Latency Max (s):", metrics["latency_max"]))
     print("{:<40} {:<15.4f}".format("Latency P99 (s):", metrics["latency_p99"]))
     print("{:<40} {:<15.4f}".format("Latency P95 (s):", metrics["latency_p95"]))
 
