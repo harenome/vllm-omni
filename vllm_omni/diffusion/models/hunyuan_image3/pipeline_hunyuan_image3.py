@@ -1982,8 +1982,16 @@ class HunyuanImage3Pipeline(
         image_size = (height, width)
         num_inference_steps = sampling.num_inference_steps or 50
         guidance_scale = sampling.guidance_scale if sampling.guidance_scale_provided else 5.0
-        if guidance_scale <= 1.0:
-            logger.info("HunyuanImage3.0 step execution runs without classifier-free guidance.")
+        if guidance_scale > 1.0:
+            logger.info(
+                "HunyuanImage3.0 step execution runs with classifier-free guidance, guidance_scale=%s.",
+                guidance_scale,
+            )
+        else:
+            logger.info(
+                "HunyuanImage3.0 step execution runs without classifier-free guidance, guidance_scale=%s.",
+                guidance_scale,
+            )
         pipe._guidance_scale = guidance_scale
         pipe._guidance_rescale = getattr(sampling, "guidance_rescale", 0.0)
 
@@ -2618,8 +2626,16 @@ class HunyuanImage3Pipeline(
         num_inference_steps = req.sampling_params.num_inference_steps or num_inference_steps
         if req.sampling_params.guidance_scale_provided:
             guidance_scale = req.sampling_params.guidance_scale
-        if guidance_scale <= 1.0:
-            logger.info("HunyuanImage3.0 runs without classifier-free guidance when guidance_scale <= 1.0.")
+        if guidance_scale > 1.0:
+            logger.info(
+                "HunyuanImage3.0 runs with classifier-free guidance, guidance_scale=%s.",
+                guidance_scale,
+            )
+        else:
+            logger.info(
+                "HunyuanImage3.0 runs without classifier-free guidance, guidance_scale=%s.",
+                guidance_scale,
+            )
         image_size = (height, width)
 
         # ---- AR KV Reuse: extract injected KV from request ----
